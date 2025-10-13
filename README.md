@@ -1,49 +1,57 @@
-# KBK Pass Bot Backend (Vercel)
 
-Серверless‑эндпойнт для автоматической отправки формы пропуска на сайте УК.
+# KBK Pass Bot (Vercel + Telegram, Edge Config)
 
-## Что делает
-- Принимает короткую фразу вида: `ауди 123` или `330 киа`.
-- Берёт **ровно три цифры** → `CAR_NUMBER_RUS_NUMBER`, остальной текст → `CAR_INFO`.
-- Логинится на сайт, извлекает `sessid`, отправляет форму с фиксированными полями из `.env`.
-- Возвращает JSON со статусом и сжатыми данными ответа.
+Serverless‑проект: Telegram‑бот + HTTP‑эндпойнт для оформления пропуска на сайте УК (Bitrix).
+Хранилище «доверенных» пользователей — **Vercel Edge Config** (чтение через SDK, запись через REST API).
 
-## Быстрый старт
+## Возможности
+- Бот спрашивает пароль один раз, добавляет пользователя в доверенные (Edge Config).
+- Доверенный пользователь пишет: `ауди 123` или `330 киа` — бот отправляет форму в ЛК.
+- Параллельно доступен REST‑эндпойнт `/api/pass` (для n8n/скриптов).
 
-1. Склонируй репозиторий и залей в свой приватный GitHub.
-2. На Vercel: **New Project → Import** из GitHub.
-3. Заполни **Environment Variables** по образцу из `.env.example`.
-4. Deploy. Эндпойнт: `https://<project>.vercel.app/api/pass`.
+## Структура
+```
+api/
+  pass.ts        # REST-эндпойнт
+  telegram.ts    # Telegram webhook
+lib/
+  env.ts         # env с APP_ префиксами
+  common.ts      # парсинг сообщения и дата
+  bitrix.ts      # логин + отправка формы
+  trust.ts       # Edge Config (get) + REST write
+vercel.json      # Node.js 20 runtime
+package.json
+.env.example
+tsconfig.json
+.gitignore
+```
 
-### Пример запроса
+## Настройка
+
+1. **Edge Config (Dashboard → Storage → Create Database → Edge Config).**
+   - Создай Edge Config и **привяжи к проекту**. Vercel автоматически добавит env `EDGE_CONFIG` (connection string) для чтения.
+   - Открой **Settings** Edge Config и **скопируй `Edge Config ID`** → вставь в `EDGE_CONFIG_ID` (env).
+2. **Access Token для REST‑записей.**
+   - Создай **Vercel Access Token** в личном аккаунте (или в Team) и запиши в `VERCEL_ACCESS_TOKEN` (env).
+   - Если Edge Config создан в **Team**, также укажи `TEAM_ID` (env).
+3. **Заполни остальные переменные** из `.env.example` (логин/пароль ЛК, TELEGRAM_* и т.п.).
+4. Задеплой проект на Vercel.
+5. **Поставь вебхук Telegram:**
+```bash
+curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook"   -H "Content-Type: application/json"   -d "{"url":"https://<project>.vercel.app/api/telegram?secret=<TELEGRAM_WEBHOOK_SECRET>"}"
+```
+
+## Пример работы бота
+1) `/start` → бот просит пароль.  
+2) Отправляешь правильный пароль → бот сохраняет `trusted:<userId> = "1"` в Edge Config.  
+3) Пишешь `ауди 123` → бот оформляет пропуск и отвечает статусом.
+
+## Ручной REST‑вызов
 ```bash
 curl -X POST https://<project>.vercel.app/api/pass   -H "X-Access-Key: <ACCESS_KEY>"   -H "Content-Type: application/json"   -d '{"text":"ауди 123"}'
 ```
 
-### Формат тела
-```json
-{
-  "text": "ауди 123",
-  "reg_code": "000",                   // опционально, 3 цифры; по умолчанию из .env
-  "visit_at": "11.10.2025 14:13:00",   // опционально; иначе now+5мин в TZ
-  "comment": ""                        // опционально
-}
-```
-
-## Переменные окружения
-Смотри `.env.example`. Ключевые:
-- `ACCESS_KEY` — секрет доступа к эндпойнту.
-- `LOGIN_USER`, `LOGIN_PASSWORD` — учётка ЛК.
-- `SELECT_HOUSE`, `SELECT_FLAT`, `FIO`, `PHONE` — постоянные поля формы.
-- `DEFAULT_RUS_CODE` — регион по умолчанию для номера.
-
-## Зависимости
-- axios, tough-cookie, axios-cookiejar-support
-- cheerio
-- luxon
-- zod
-- qs
-
 ## Примечания
-- Если сайт поменяет вёрстку и `sessid` не найдётся — вернётся ошибка 502 с подсказкой.
-- Если УК включит CAPTCHA/2FA — понадобится сценарий с headless‑браузером (не входит в этот минимальный проект).
+- Edge Config оптимизирован под **много чтений и мало записей**; для белого списка это идеально.
+- SDK `@vercel/edge-config` умеет **только читать**; запись идёт через REST `PATCH /v1/edge-config/{id}/items`.
+- Если включат CAPTCHA/2FA на сайте УК — потребуется headless‑вход (отдельная задача).
