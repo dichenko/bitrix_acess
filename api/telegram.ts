@@ -8,6 +8,12 @@ import { isTrusted, trust } from '../lib/trust.js';
 const BOT_TOKEN = env('TELEGRAM_BOT_TOKEN');
 const WEBHOOK_SECRET = env('TELEGRAM_WEBHOOK_SECRET');
 const BOT_PASSWORD = env('BOT_PASSWORD');
+const YANDEX_STT_API_KEY = env('YANDEX_STT_API_KEY');
+const YANDEX_STT_FOLDER_ID = env('YANDEX_STT_FOLDER_ID', '');
+const YANDEX_STT_LANG = env('YANDEX_STT_LANG', 'ru-RU');
+const YANDEX_STT_TOPIC = env('YANDEX_STT_TOPIC', 'general');
+
+const VOICE_RECOGNITION_FAIL_MESSAGE = 'Бот не смог распознать номер и марку машины.';
 
 const log = (...args: unknown[]) => {
   console.log('[telegram]', ...args);
@@ -20,6 +26,63 @@ const tg = axios.create({
 
 async function sendMessage(chatId: number, text: string) {
   await tg.post('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+}
+
+interface TelegramVoice {
+  file_id: string;
+  mime_type?: string;
+  duration?: number;
+}
+
+interface TelegramFileResponse {
+  ok: boolean;
+  result?: {
+    file_path?: string;
+  };
+  description?: string;
+}
+
+interface YandexSttResponse {
+  result?: string;
+  error_code?: number | string;
+  error_message?: string;
+}
+
+async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
+  const { data: fileData } = await tg.post<TelegramFileResponse>('getFile', { file_id: voice.file_id });
+  if (!fileData.ok || !fileData.result?.file_path) {
+    throw new Error(`telegram getFile failed: ${fileData.description ?? 'unknown error'}`);
+  }
+
+  const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
+  const audioResp = await axios.get<ArrayBuffer>(fileUrl, {
+    responseType: 'arraybuffer',
+    timeout: 20000
+  });
+  const audioBuffer = Buffer.from(audioResp.data);
+
+  const params = new URLSearchParams({
+    lang: YANDEX_STT_LANG,
+    topic: YANDEX_STT_TOPIC
+  });
+  if (YANDEX_STT_FOLDER_ID) params.set('folderId', YANDEX_STT_FOLDER_ID);
+
+  const sttUrl = `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?${params.toString()}`;
+  const { data: sttData } = await axios.post<YandexSttResponse>(sttUrl, audioBuffer, {
+    headers: {
+      Authorization: `Api-Key ${YANDEX_STT_API_KEY}`,
+      'Content-Type': voice.mime_type ?? 'application/octet-stream',
+      'Transfer-Encoding': 'chunked'
+    },
+    timeout: 20000,
+    maxBodyLength: Infinity
+  });
+
+  if (sttData.error_code) {
+    throw new Error(`Yandex STT error ${sttData.error_code}: ${sttData.error_message ?? 'unknown'}`);
+  }
+
+  return (sttData.result ?? '').trim();
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -40,17 +103,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const msg = update.message;
     const chatId: number = msg.chat.id;
     const userId: number = msg.from.id;
-    const text: string = (msg.text || '').trim();
+    const hasVoice = Boolean(msg.voice);
+    let text = (msg.text || msg.caption || '').trim();
+    let textFromVoice = false;
 
     log('incoming message', {
       chatId,
       userId,
       textPreview: text.slice(0, 30),
-      hasEntities: Array.isArray(msg.entities) && msg.entities.length > 0
+      hasEntities: Array.isArray(msg.entities) && msg.entities.length > 0,
+      hasVoice
     });
 
+    if (!text && hasVoice) {
+      textFromVoice = true;
+      try {
+        text = await recognizeVoiceMessage(msg.voice as TelegramVoice);
+        if (text) {
+          log('voice transcription', { userId, textPreview: text.slice(0, 50), length: text.length });
+        }
+      } catch (voiceErr: any) {
+        const message = (voiceErr?.message || 'unknown').slice(0, 200);
+        log('voice recognition failed', { userId, error: message });
+        await sendMessage(chatId, VOICE_RECOGNITION_FAIL_MESSAGE);
+        return res.status(200).json({ ok: true });
+      }
+    }
+
     if (!text) {
-      await sendMessage(chatId, 'Отправьте текст в формате: <b>KIA 215</b> или <b>777 мерседес</b>.');
+      await sendMessage(chatId, hasVoice ? VOICE_RECOGNITION_FAIL_MESSAGE : 'Отправьте текст в формате: <b>KIA 215</b> или <b>777 мерседес</b>.');
       return res.status(200).json({ ok: true });
     }
 
@@ -84,8 +165,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
+    let carInfo: string;
+    let number3: string;
     try {
-      const { carInfo, number3 } = parseMessage(text);
+      ({ carInfo, number3 } = parseMessage(text));
+    } catch (parseErr: any) {
+      const message = (parseErr?.message || 'unknown').slice(0, 300);
+      log('parse error', { userId, error: message, fromVoice: textFromVoice });
+      await sendMessage(chatId, textFromVoice ? VOICE_RECOGNITION_FAIL_MESSAGE : `Ошибка: <pre>${message}</pre>`);
+      return res.status(200).json({ ok: true });
+    }
+
+    try {
       const visit = formatVisitAt();
       log('parsed request', { userId, carInfo, number3, visit });
 
@@ -113,6 +204,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       log('handler error', { userId, error: message });
       await sendMessage(chatId, `Ошибка: <pre>${message}</pre>`);
     }
+
 
     return res.status(200).json({ ok: true });
   } catch (err: any) {

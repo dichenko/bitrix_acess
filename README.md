@@ -55,3 +55,7 @@ curl -X POST https://<project>.vercel.app/api/pass   -H "X-Access-Key: <ACCESS_K
 - Edge Config оптимизирован под **много чтений и мало записей**; для белого списка это идеально.
 - SDK `@vercel/edge-config` умеет **только читать**; запись идёт через REST `PATCH /v1/edge-config/{id}/items`.
 
+## Голосовые сообщения
+- Бот распознаёт голосовые сообщения через Yandex SpeechKit STT перед обработкой текста.
+- Укажите ключ в `YANDEX_STT_API_KEY` и при необходимости `YANDEX_STT_FOLDER_ID`, язык (`YANDEX_STT_LANG`) и тему (`YANDEX_STT_TOPIC`).
+- При неудачном распознавании бот ответит, что не смог распознать номер и марку машины.
