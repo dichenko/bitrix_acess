@@ -11,14 +11,15 @@ const EDGE_CONFIG_ID = env('EDGE_CONFIG_ID');
 const VERCEL_ACCESS_TOKEN = env('VERCEL_ACCESS_TOKEN');
 const TEAM_ID = process.env.APP_TEAM_ID ?? process.env.TEAM_ID;
 
+const trustedKey = (userId: number) => `trusted_${userId}`;
+
 export async function isTrusted(userId: number): Promise<boolean> {
-  const key = `trusted:${userId}`;
-  const value = await get<string | null>(key);
+  const value = await get<string | null>(trustedKey(userId));
   return value === '1';
 }
 
 export async function trust(userId: number): Promise<void> {
-  const key = `trusted:${userId}`;
+  const key = trustedKey(userId);
   const url = new URL(`https://api.vercel.com/v1/edge-config/${EDGE_CONFIG_ID}/items`);
   if (TEAM_ID) url.searchParams.set('teamId', TEAM_ID);
 
