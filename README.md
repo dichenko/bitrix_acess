@@ -54,4 +54,4 @@ curl -X POST https://<project>.vercel.app/api/pass   -H "X-Access-Key: <ACCESS_K
 ## Примечания
 - Edge Config оптимизирован под **много чтений и мало записей**; для белого списка это идеально.
 - SDK `@vercel/edge-config` умеет **только читать**; запись идёт через REST `PATCH /v1/edge-config/{id}/items`.
-- Если включат CAPTCHA/2FA на сайте УК — потребуется headless‑вход (отдельная задача).
+
