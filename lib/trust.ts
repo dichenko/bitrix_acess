@@ -33,6 +33,7 @@ export async function trust(userId: number): Promise<void> {
     validateStatus: () => true
   });
   if (resp.status < 200 || resp.status >= 300) {
-    throw new Error(`Edge Config write failed: HTTP ${resp.status}`);
+    const detail = typeof resp.data === 'object' ? JSON.stringify(resp.data) : String(resp.data ?? '');
+    throw new Error(`Edge Config write failed: HTTP ${resp.status} ${detail}`);
   }
 }

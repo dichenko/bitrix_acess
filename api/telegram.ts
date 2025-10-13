@@ -62,12 +62,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(200).json({ ok: true });
       }
       if (text === BOT_PASSWORD) {
-        await trust(userId);
-        log('user trusted', { userId });
-        await sendMessage(
-          chatId,
-          'Пароль принят. Можете отправить запрос в формате <b>Марка авто 123</b> или <b>330 дом</b>.'
-        );
+        try {
+          await trust(userId);
+          log('user trusted', { userId });
+          await sendMessage(
+            chatId,
+            'Пароль принят. Можете отправить запрос в формате <b>Марка авто 123</b> или <b>330 дом</b>.'
+          );
+        } catch (err: any) {
+          const message = (err?.message || 'unknown').slice(0, 200);
+          log('trust write failed', { userId, error: message });
+          await sendMessage(
+            chatId,
+            'Пароль принят, но не удалось сохранить доступ. Попробуйте позже или свяжитесь с администратором.'
+          );
+        }
         return res.status(200).json({ ok: true });
       }
 
