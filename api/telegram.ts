@@ -50,7 +50,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!text) {
-      await sendMessage(chatId, 'Отправьте текст в формате: <b>AK1234 330</b> или <b>330 дом</b>.');
+      await sendMessage(chatId, 'Отправьте текст в формате: <b>KIA 215</b> или <b>777 мерседес</b>.');
       return res.status(200).json({ ok: true });
     }
 
