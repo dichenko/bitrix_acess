@@ -1,21 +1,10 @@
 {
   "version": 2,
   "functions": {
-    "api/**/*.ts": {
-      "runtime": "nodejs20.x",
-      "memory": 256,
-      "maxDuration": 20
-    },
-    "api/**/*.js": {
+    "api/**/*.{js,ts}": {
       "runtime": "nodejs20.x",
       "memory": 256,
       "maxDuration": 20
     }
-  },
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    }
-  ]
+  }
 }
