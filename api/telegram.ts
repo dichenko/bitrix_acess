@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import axios from 'axios';
+import type { AxiosResponse } from 'axios';
 import { env } from '../lib/env.js';
 import { parseMessage, formatVisitAt } from '../lib/common.js';
 import { submitPass } from '../lib/bitrix.js';
@@ -48,6 +49,26 @@ interface YandexSttResponse {
   error_message?: string;
 }
 
+function resolveYandexSttFormat(mime?: string): string | undefined {
+  if (!mime) return undefined;
+  const normalized = mime.split(';')[0].trim().toLowerCase();
+  switch (normalized) {
+    case 'audio/ogg':
+    case 'audio/opus':
+      return 'oggopus';
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return 'mp3';
+    case 'audio/wav':
+    case 'audio/x-wav':
+      return 'wav';
+    case 'audio/flac':
+      return 'flac';
+    default:
+      return undefined;
+  }
+}
+
 async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
   log('voice recognition start', {
     fileId: voice.file_id,
@@ -71,11 +92,13 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
     timeout: 20000
   });
   const audioBuffer = Buffer.from(audioResp.data);
+  const audioFormat = resolveYandexSttFormat(voice.mime_type);
 
   log('voice file downloaded', {
     fileId: voice.file_id,
     byteLength: audioBuffer.byteLength,
-    mimeType: voice.mime_type
+    mimeType: voice.mime_type,
+    format: audioFormat ?? 'auto'
   });
 
   const params = new URLSearchParams({
@@ -83,24 +106,59 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
     topic: YANDEX_STT_TOPIC
   });
   if (YANDEX_STT_FOLDER_ID) params.set('folderId', YANDEX_STT_FOLDER_ID);
+  if (audioFormat) params.set('format', audioFormat);
 
   log('voice stt request', {
     fileId: voice.file_id,
     lang: YANDEX_STT_LANG,
     topic: YANDEX_STT_TOPIC,
-    hasFolderId: Boolean(YANDEX_STT_FOLDER_ID)
+    hasFolderId: Boolean(YANDEX_STT_FOLDER_ID),
+    format: audioFormat ?? null
   });
 
   const sttUrl = `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?${params.toString()}`;
-  const { data: sttData } = await axios.post<YandexSttResponse>(sttUrl, audioBuffer, {
-    headers: {
-      Authorization: `Api-Key ${YANDEX_STT_API_KEY}`,
-      'Content-Type': voice.mime_type ?? 'application/octet-stream',
-      'Transfer-Encoding': 'chunked'
-    },
-    timeout: 20000,
-    maxBodyLength: Infinity
+  let sttResp: AxiosResponse<YandexSttResponse | string>;
+  try {
+    sttResp = await axios.post<YandexSttResponse | string>(sttUrl, audioBuffer, {
+      headers: {
+        Authorization: `Api-Key ${YANDEX_STT_API_KEY}`,
+        'Content-Type': voice.mime_type ?? 'application/octet-stream',
+        'Transfer-Encoding': 'chunked'
+      },
+      timeout: 20000,
+      maxBodyLength: Infinity,
+      validateStatus: () => true
+    });
+  } catch (rawErr: any) {
+    log('voice stt request failed', {
+      fileId: voice.file_id,
+      error: rawErr?.message ?? 'unknown'
+    });
+    throw rawErr;
+  }
+
+  const sttStatus = sttResp.status;
+  const responseData = sttResp.data;
+  const sttSnippet =
+    typeof responseData === 'string'
+      ? responseData.slice(0, 200)
+      : JSON.stringify(responseData).slice(0, 200);
+
+  log('voice stt response raw', {
+    fileId: voice.file_id,
+    status: sttStatus,
+    snippet: sttSnippet
   });
+
+  if (sttStatus >= 400) {
+    throw new Error(`Yandex STT HTTP ${sttStatus}: ${sttSnippet}`);
+  }
+
+  if (!responseData || typeof responseData !== 'object') {
+    throw new Error('Yandex STT returned malformed response');
+  }
+
+  const sttData = responseData as YandexSttResponse;
 
   if (sttData.error_code) {
     throw new Error(`Yandex STT error ${sttData.error_code}: ${sttData.error_message ?? 'unknown'}`);
