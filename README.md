@@ -1,5 +1,5 @@
 
-# KBK Pass Bot (Vercel + Telegram + YandexSpeexh kit)
+# Bitrix Pass Bot (Vercel + Telegram + YandexSpeexh kit)
 
 Telegram‑бот для заказа гостевых пропусков на территорию закрытого ЖК (интеграция с Bitrix).
 
