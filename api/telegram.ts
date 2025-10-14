@@ -49,10 +49,21 @@ interface YandexSttResponse {
 }
 
 async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
+  log('voice recognition start', {
+    fileId: voice.file_id,
+    mimeType: voice.mime_type,
+    duration: voice.duration
+  });
+
   const { data: fileData } = await tg.post<TelegramFileResponse>('getFile', { file_id: voice.file_id });
   if (!fileData.ok || !fileData.result?.file_path) {
     throw new Error(`telegram getFile failed: ${fileData.description ?? 'unknown error'}`);
   }
+
+  log('voice file path resolved', {
+    fileId: voice.file_id,
+    filePath: fileData.result.file_path
+  });
 
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
   const audioResp = await axios.get<ArrayBuffer>(fileUrl, {
@@ -61,11 +72,24 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
   });
   const audioBuffer = Buffer.from(audioResp.data);
 
+  log('voice file downloaded', {
+    fileId: voice.file_id,
+    byteLength: audioBuffer.byteLength,
+    mimeType: voice.mime_type
+  });
+
   const params = new URLSearchParams({
     lang: YANDEX_STT_LANG,
     topic: YANDEX_STT_TOPIC
   });
   if (YANDEX_STT_FOLDER_ID) params.set('folderId', YANDEX_STT_FOLDER_ID);
+
+  log('voice stt request', {
+    fileId: voice.file_id,
+    lang: YANDEX_STT_LANG,
+    topic: YANDEX_STT_TOPIC,
+    hasFolderId: Boolean(YANDEX_STT_FOLDER_ID)
+  });
 
   const sttUrl = `https://stt.api.cloud.yandex.net/speech/v1/stt:recognize?${params.toString()}`;
   const { data: sttData } = await axios.post<YandexSttResponse>(sttUrl, audioBuffer, {
@@ -81,6 +105,13 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
   if (sttData.error_code) {
     throw new Error(`Yandex STT error ${sttData.error_code}: ${sttData.error_message ?? 'unknown'}`);
   }
+
+  log('voice stt response', {
+    fileId: voice.file_id,
+    hasResult: Boolean(sttData.result),
+    errorCode: sttData.error_code ?? null,
+    resultPreview: sttData.result ? sttData.result.slice(0, 50) : ''
+  });
 
   return (sttData.result ?? '').trim();
 }
@@ -107,6 +138,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let text = (msg.text || msg.caption || '').trim();
     let textFromVoice = false;
 
+    if (hasVoice) {
+      const voiceMeta = msg.voice as TelegramVoice;
+      log('voice message metadata', {
+        userId,
+        fileId: voiceMeta.file_id,
+        duration: voiceMeta.duration,
+        mimeType: voiceMeta.mime_type,
+        hasCaption: Boolean(msg.caption),
+        initialTextLength: text.length
+      });
+    }
+
     log('incoming message', {
       chatId,
       userId,
@@ -118,6 +161,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!text && hasVoice) {
       textFromVoice = true;
       try {
+        log('voice transcription requested', {
+          userId,
+          fileId: (msg.voice as TelegramVoice).file_id
+        });
+
         text = await recognizeVoiceMessage(msg.voice as TelegramVoice);
         if (text) {
           log('voice transcription', { userId, textPreview: text.slice(0, 50), length: text.length });
@@ -185,7 +233,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (result.ok) {
         await sendMessage(
           chatId,
-          `Пропуск отправлен:
+          `Пропуск заказан:
 Авто: <b>${carInfo}</b>
 Код: <b>${number3}</b>
 Время визита: <b>${visit}</b>`
