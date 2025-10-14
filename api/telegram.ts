@@ -10,7 +10,7 @@ const BOT_TOKEN = env('TELEGRAM_BOT_TOKEN');
 const WEBHOOK_SECRET = env('TELEGRAM_WEBHOOK_SECRET');
 const BOT_PASSWORD = env('BOT_PASSWORD');
 const YANDEX_STT_API_KEY = env('YANDEX_STT_API_KEY');
-const YANDEX_STT_FOLDER_ID = env('YANDEX_STT_FOLDER_ID', '');
+const YANDEX_STT_FOLDER_ID = env('YANDEX_STT_FOLDER_ID');
 const YANDEX_STT_LANG = env('YANDEX_STT_LANG', 'ru-RU');
 const YANDEX_STT_TOPIC = env('YANDEX_STT_TOPIC', 'general');
 
@@ -103,9 +103,9 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
 
   const params = new URLSearchParams({
     lang: YANDEX_STT_LANG,
-    topic: YANDEX_STT_TOPIC
+    topic: YANDEX_STT_TOPIC,
+    folderId: YANDEX_STT_FOLDER_ID
   });
-  if (YANDEX_STT_FOLDER_ID) params.set('folderId', YANDEX_STT_FOLDER_ID);
   if (audioFormat) params.set('format', audioFormat);
 
   log('voice stt request', {
@@ -122,8 +122,7 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
     sttResp = await axios.post<YandexSttResponse | string>(sttUrl, audioBuffer, {
       headers: {
         Authorization: `Api-Key ${YANDEX_STT_API_KEY}`,
-        'Content-Type': voice.mime_type ?? 'application/octet-stream',
-        'Transfer-Encoding': 'chunked'
+        'Content-Type': voice.mime_type ?? 'application/octet-stream'
       },
       timeout: 20000,
       maxBodyLength: Infinity,
