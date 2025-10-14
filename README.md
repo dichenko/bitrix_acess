@@ -1,13 +1,10 @@
 
-# KBK Pass Bot (Vercel + Telegram, Edge Config)
+# KBK Pass Bot (Vercel + Telegram + YandexSpeexh kit)
 
-Serverless‑проект: Telegram‑бот + HTTP‑эндпойнт для оформления пропуска на сайте УК (Bitrix).
-Хранилище «доверенных» пользователей — **Vercel Edge Config** (чтение через SDK, запись через REST API).
+Telegram‑бот для заказа гостевых пропусков на территорию закрытого ЖК (интеграция с Bitrix).
 
 ## Возможности
-- Бот спрашивает пароль один раз, добавляет пользователя в доверенные (Edge Config).
-- Доверенный пользователь пишет: `ауди 123` или `330 киа` — бот отправляет форму в ЛК.
-- Параллельно доступен REST‑эндпойнт `/api/pass` (для n8n/скриптов).
+- Работает с текстовыми и голосовыми запросами
 
 ## Структура
 ```
@@ -40,20 +37,6 @@ tsconfig.json
 ```bash
 curl -X POST "https://api.telegram.org/bot<TELEGRAM_BOT_TOKEN>/setWebhook"   -H "Content-Type: application/json"   -d "{"url":"https://<project>.vercel.app/api/telegram?secret=<TELEGRAM_WEBHOOK_SECRET>"}"
 ```
-
-## Пример работы бота
-1) `/start` → бот просит пароль.  
-2) Отправляешь правильный пароль → бот сохраняет `trusted:<userId> = "1"` в Edge Config.  
-3) Пишешь `ауди 123` → бот оформляет пропуск и отвечает статусом.
-
-## Ручной REST‑вызов
-```bash
-curl -X POST https://<project>.vercel.app/api/pass   -H "X-Access-Key: <ACCESS_KEY>"   -H "Content-Type: application/json"   -d '{"text":"ауди 123"}'
-```
-
-## Примечания
-- Edge Config оптимизирован под **много чтений и мало записей**; для белого списка это идеально.
-- SDK `@vercel/edge-config` умеет **только читать**; запись идёт через REST `PATCH /v1/edge-config/{id}/items`.
 
 ## Голосовые сообщения
 - Бот распознаёт голосовые сообщения через Yandex SpeechKit STT перед обработкой текста.

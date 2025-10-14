@@ -244,7 +244,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!trusted) {
       log('user not trusted', { userId });
       if (text === '/start') {
-        await sendMessage(chatId, 'Привет! Введите пароль для доступа.');
+        await sendMessage(chatId, 'Введите номер квитанции для доступа.');
         return res.status(200).json({ ok: true });
       }
       if (text === BOT_PASSWORD) {
@@ -253,7 +253,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           log('user trusted', { userId });
           await sendMessage(
             chatId,
-            'Пароль принят. Можете отправить запрос в формате <b>Марка авто 123</b> или <b>330 дом</b>.'
+            'Идентификация пройдена успешно. Можете отправить запрос в формате <b>Марка авто 123</b> или <b>330 дом</b>.'
           );
         } catch (err: any) {
           const message = (err?.message || 'unknown').slice(0, 200);
