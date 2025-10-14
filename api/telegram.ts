@@ -9,10 +9,10 @@ import { isTrusted, trust } from '../lib/trust.js';
 const BOT_TOKEN = env('TELEGRAM_BOT_TOKEN');
 const WEBHOOK_SECRET = env('TELEGRAM_WEBHOOK_SECRET');
 const BOT_PASSWORD = env('BOT_PASSWORD');
-const YANDEX_STT_API_KEY = env('YANDEX_STT_API_KEY');
-const YANDEX_STT_FOLDER_ID = env('YANDEX_STT_FOLDER_ID');
-const YANDEX_STT_LANG = env('YANDEX_STT_LANG', 'ru-RU');
-const YANDEX_STT_TOPIC = env('YANDEX_STT_TOPIC', 'general');
+const YANDEX_STT_API_KEY = env('YANDEX_STT_API_KEY').trim();
+const YANDEX_STT_FOLDER_ID = env('YANDEX_STT_FOLDER_ID').trim();
+const YANDEX_STT_LANG = env('YANDEX_STT_LANG', 'ru-RU').trim();
+const YANDEX_STT_TOPIC = env('YANDEX_STT_TOPIC', 'general').trim();
 
 const VOICE_RECOGNITION_FAIL_MESSAGE = 'Бот не смог распознать номер и марку машины.';
 
@@ -317,3 +317,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ ok: true });
   }
 }
+  log('voice stt config', {
+    keyPrefix: `${YANDEX_STT_API_KEY.slice(0, 4)}***`,
+    folderId: YANDEX_STT_FOLDER_ID,
+    lang: YANDEX_STT_LANG,
+    topic: YANDEX_STT_TOPIC
+  });
