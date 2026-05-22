@@ -22,7 +22,7 @@ const log = (...args: unknown[]) => {
 
 const tg = axios.create({
   baseURL: `https://api.telegram.org/bot${BOT_TOKEN}/`,
-  timeout: 12000
+  timeout: 30000
 });
 
 async function sendMessage(chatId: number, text: string) {
@@ -89,7 +89,7 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
   const fileUrl = `https://api.telegram.org/file/bot${BOT_TOKEN}/${fileData.result.file_path}`;
   const audioResp = await axios.get<ArrayBuffer>(fileUrl, {
     responseType: 'arraybuffer',
-    timeout: 20000
+    timeout: 30000
   });
   const audioBuffer = Buffer.from(audioResp.data);
   const audioFormat = resolveYandexSttFormat(voice.mime_type);
@@ -124,7 +124,7 @@ async function recognizeVoiceMessage(voice: TelegramVoice): Promise<string> {
         Authorization: `Api-Key ${YANDEX_STT_API_KEY}`,
         'Content-Type': voice.mime_type ?? 'application/octet-stream'
       },
-      timeout: 20000,
+      timeout: 30000,
       maxBodyLength: Infinity,
       validateStatus: () => true
     });

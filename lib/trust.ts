@@ -30,7 +30,7 @@ export async function trust(userId: number): Promise<void> {
       Authorization: `Bearer ${VERCEL_ACCESS_TOKEN}`,
       'Content-Type': 'application/json'
     },
-    timeout: 12000,
+    timeout: 30000,
     validateStatus: () => true
   });
   if (resp.status < 200 || resp.status >= 300) {

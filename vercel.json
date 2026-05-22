@@ -3,8 +3,9 @@
   "outputDirectory": ".",
   "functions": {
     "api/**/*.{js,ts}": {
+      "regions": ["fra1"],
       "memory": 256,
-      "maxDuration": 20
+      "maxDuration": 60
     }
   }
 }
