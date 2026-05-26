@@ -5,6 +5,7 @@ import { env } from '../lib/env.js';
 import { parseMessage, formatVisitAt } from '../lib/common.js';
 import { submitPass } from '../lib/bitrix.js';
 import { isTrusted, trust } from '../lib/trust.js';
+import { notifyAdminPassOrder, type TelegramUser } from '../lib/adminNotifications.js';
 
 const BOT_TOKEN = env('TELEGRAM_BOT_TOKEN');
 const WEBHOOK_SECRET = env('TELEGRAM_WEBHOOK_SECRET');
@@ -190,7 +191,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const msg = update.message;
     const chatId: number = msg.chat.id;
-    const userId: number = msg.from.id;
+    const user = msg.from as TelegramUser;
+    const userId: number = user.id;
     const hasVoice = Boolean(msg.voice);
     let text = (msg.text || msg.caption || '').trim();
     let textFromVoice = false;
@@ -281,13 +283,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
+    const visit = formatVisitAt();
+
     try {
-      const visit = formatVisitAt();
       log('parsed request', { userId, carInfo, number3, visit });
 
       const result = await submitPass({ carInfo, number3, visitAt: visit });
 
       if (result.ok) {
+        await notifyAdminPassOrder({ user, carInfo, number3, visit, ok: true });
         await sendMessage(
           chatId,
           `Пропуск заказан:
@@ -297,6 +301,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         );
         log('submission ok', { userId, status: result.status });
       } else {
+        await notifyAdminPassOrder({ user, carInfo, number3, visit, ok: false, error: `HTTP ${result.status}: ${result.snippet}` });
         await sendMessage(
           chatId,
           `Не удалось отправить пропуск (HTTP ${result.status})
@@ -307,6 +312,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) {
       const message = (e?.message || 'unknown').slice(0, 300);
       log('handler error', { userId, error: message });
+      await notifyAdminPassOrder({ user, carInfo, number3, visit, ok: false, error: message });
       await sendMessage(chatId, `Ошибка: <pre>${message}</pre>`);
     }
 
