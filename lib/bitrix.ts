@@ -81,7 +81,8 @@ export async function submitPass(params: {
 
     const page = await timed('GET access', () => client.get(new URL('/personal/access/', BASE_URL).toString(), {
       headers: { 'User-Agent': USER_AGENT },
-      timeout: BITRIX_TIMEOUT_MS
+      timeout: BITRIX_TIMEOUT_MS,
+      validateStatus: () => true
     }));
     const html = String(page.data);
     const $ = cheerio.load(html);
@@ -90,7 +91,10 @@ export async function submitPass(params: {
       const m = html.match(/bitrix_sessid["']?\s*[:=]\s*["']([a-f0-9]{32})["']/i);
       if (m) sessid = m[1];
     }
-    if (!sessid) throw new Error('Не удалось извлечь sessid со страницы /personal/access/.');
+    if (!sessid) {
+      const snippet = html.slice(0, 200);
+      throw new Error(`Не удалось извлечь sessid со страницы /personal/access/. HTTP ${page.status}: ${snippet}`);
+    }
 
     const form: Record<string,string> = {
       sessid,
