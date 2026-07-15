@@ -30,6 +30,15 @@ const FORM_CONST = {
   DEFAULT_RUS_CODE: env('DEFAULT_RUS_CODE', '000'),
 };
 
+function extractSessid(html: string): string {
+  const $ = cheerio.load(html);
+  const inputSessid = $('input[name="sessid"]').attr('value') || '';
+  if (inputSessid) return inputSessid;
+
+  const match = html.match(/bitrix_sessid["']?\s*[:=]\s*["']([a-f0-9]{32})["']/i);
+  return match?.[1] ?? '';
+}
+
 export async function submitPass(params: {
   carInfo: string;
   number3: string;
@@ -79,21 +88,26 @@ export async function submitPass(params: {
       throw new Error(`Ошибка логина: HTTP ${loginResp.status}`);
     }
 
-    const page = await timed('GET access', () => client.get(new URL('/personal/access/', BASE_URL).toString(), {
-      headers: { 'User-Agent': USER_AGENT },
-      timeout: BITRIX_TIMEOUT_MS,
-      validateStatus: () => true
-    }));
-    const html = String(page.data);
-    const $ = cheerio.load(html);
-    let sessid = $('input[name="sessid"]').attr('value') || '';
+    let accessStatus = loginResp.status;
+    let html = String(loginResp.data);
+    let sessid = extractSessid(html);
+
     if (!sessid) {
-      const m = html.match(/bitrix_sessid["']?\s*[:=]\s*["']([a-f0-9]{32})["']/i);
-      if (m) sessid = m[1];
+      const page = await timed('GET access', () => client.get(new URL('/personal/access/', BASE_URL).toString(), {
+        headers: { 'User-Agent': USER_AGENT },
+        timeout: BITRIX_TIMEOUT_MS,
+        validateStatus: () => true
+      }));
+      accessStatus = page.status;
+      html = String(page.data);
+      sessid = extractSessid(html);
+    } else {
+      console.log('[bitrix]', 'sessid from login response');
     }
+
     if (!sessid) {
       const snippet = html.slice(0, 200);
-      throw new Error(`Не удалось извлечь sessid со страницы /personal/access/. HTTP ${page.status}: ${snippet}`);
+      throw new Error(`Не удалось извлечь sessid со страницы /personal/access/. HTTP ${accessStatus}: ${snippet}`);
     }
 
     const form: Record<string,string> = {
