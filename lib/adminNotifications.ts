@@ -32,13 +32,19 @@ function formatRequester(user?: TelegramUser, source?: string): string {
   if (!user) return escapeHtml(source ?? 'REST API');
 
   const name = [user.first_name, user.last_name].filter(Boolean).join(' ').trim() || user.username || String(user.id);
-  const safeName = escapeHtml(name);
+  const username = user.username?.trim().replace(/^@+/, '');
+  const usernameSuffix = username ? ` (@${username})` : '';
+  const safeName = escapeHtml(`${name}${usernameSuffix}`);
 
-  if (user.username) {
-    return `<a href="https://t.me/${encodeURIComponent(user.username)}">${safeName}</a>`;
+  if (Number.isFinite(user.id) && user.id > 0) {
+    return `<a href="tg://user?id=${user.id}">${safeName}</a>`;
   }
 
-  return `<a href="tg://user?id=${user.id}">${safeName}</a>`;
+  if (username) {
+    return `<a href="https://t.me/${username}">${safeName}</a>`;
+  }
+
+  return safeName;
 }
 
 export async function notifyAdminPassOrder(params: {
