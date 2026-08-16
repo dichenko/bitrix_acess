@@ -50,14 +50,14 @@ function formatRequester(user?: TelegramUser, source?: string): string {
 export async function notifyAdminPassOrder(params: {
   user?: TelegramUser;
   source?: string;
-  carInfo: string;
-  number3: string;
+  carNumber: string;
+  regCode: string;
   visit: string;
   ok: boolean;
   error?: string;
 }): Promise<void> {
   const requester = formatRequester(params.user, params.source);
-  const carNumber = escapeHtml(`${params.carInfo} ${params.number3}`.trim());
+  const carNumber = escapeHtml(`${params.carNumber}${params.regCode}`);
   const visit = escapeHtml(params.visit);
   const status = params.ok ? 'Успешно' : 'Ошибка';
   const errorText = params.error ? `\n<pre>${escapeHtml(params.error.slice(0, 300))}</pre>` : '';

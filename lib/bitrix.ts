@@ -27,7 +27,6 @@ const FORM_CONST = {
   PHONE: env('PHONE'),
   COMMENT: process.env['APP_COMMENT'] ?? process.env['COMMENT'] ?? '',
   AJAX_EDIT_TICKET: env('AJAX_EDIT_TICKET', 'true'),
-  DEFAULT_RUS_CODE: env('DEFAULT_RUS_CODE', '000'),
 };
 
 function extractSessid(html: string): string {
@@ -40,9 +39,8 @@ function extractSessid(html: string): string {
 }
 
 export async function submitPass(params: {
-  carInfo: string;
-  number3: string;
-  regCode?: string;
+  carNumber: string;
+  regCode: string;
   visitAt?: string;
   comment?: string;
 }) {
@@ -119,9 +117,8 @@ export async function submitPass(params: {
       SPECIAL_TYPE_ANY_CAR: FORM_CONST.SPECIAL_TYPE_ANY_CAR,
       WALKER_FIO: '',
       CAR_NUMBER_FOREIGN: '',
-      CAR_NUMBER_RUS_NUMBER: params.number3,
-      CAR_NUMBER_RUS_CODE: params.regCode ?? FORM_CONST.DEFAULT_RUS_CODE,
-      CAR_INFO: params.carInfo,
+      CAR_NUMBER_RUS_NUMBER: params.carNumber,
+      CAR_NUMBER_RUS_CODE: params.regCode,
       DATE_OF_VISITOR_CHECK_IN_EXPECTED: params.visitAt!,
       SELECT_HOUSE: FORM_CONST.SELECT_HOUSE,
       SELECT_FLAT: FORM_CONST.SELECT_FLAT,
@@ -155,9 +152,8 @@ export async function submitPass(params: {
       status: resp.status,
       snippet,
       sent: {
-        CAR_INFO: params.carInfo,
-        CAR_NUMBER_RUS_NUMBER: params.number3,
-        CAR_NUMBER_RUS_CODE: params.regCode ?? FORM_CONST.DEFAULT_RUS_CODE,
+        CAR_NUMBER_RUS_NUMBER: params.carNumber,
+        CAR_NUMBER_RUS_CODE: params.regCode,
         DATE_OF_VISITOR_CHECK_IN_EXPECTED: params.visitAt
       }
     };

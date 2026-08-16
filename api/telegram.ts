@@ -4,7 +4,7 @@ import type { AxiosResponse } from 'axios';
 import { env } from '../lib/env.js';
 import { parseMessage, formatVisitAt } from '../lib/common.js';
 import { submitPass } from '../lib/bitrix.js';
-import { isTrusted, trust } from '../lib/trust.js';
+import { getSavedCars, isTrusted, saveCar, trust } from '../lib/trust.js';
 import { notifyAdminPassOrder, type TelegramUser } from '../lib/adminNotifications.js';
 
 const BOT_TOKEN = env('TELEGRAM_BOT_TOKEN');
@@ -15,7 +15,7 @@ const YANDEX_STT_FOLDER_ID = env('YANDEX_STT_FOLDER_ID').trim();
 const YANDEX_STT_LANG = env('YANDEX_STT_LANG', 'ru-RU').trim();
 const YANDEX_STT_TOPIC = env('YANDEX_STT_TOPIC', 'general').trim();
 
-const VOICE_RECOGNITION_FAIL_MESSAGE = 'Бот не смог распознать номер и марку машины.';
+const VOICE_RECOGNITION_FAIL_MESSAGE = 'Бот не смог распознать полный номер автомобиля с регионом.';
 
 const log = (...args: unknown[]) => {
   console.log('[telegram]', ...args);
@@ -26,8 +26,38 @@ const tg = axios.create({
   timeout: 30000
 });
 
-async function sendMessage(chatId: number, text: string) {
-  await tg.post('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML' });
+type ReplyMarkup = Record<string, unknown>;
+
+async function sendMessage(chatId: number, text: string, replyMarkup?: ReplyMarkup) {
+  await tg.post('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', ...(replyMarkup ? { reply_markup: replyMarkup } : {}) });
+}
+
+async function answerCallbackQuery(callbackQueryId: string, text?: string) {
+  await tg.post('answerCallbackQuery', { callback_query_id: callbackQueryId, ...(text ? { text } : {}) });
+}
+
+async function configureBotMenu() {
+  await tg.post('setMyCommands', {
+    commands: [{ command: 'saved', description: 'Сохраненные номера' }]
+  });
+}
+
+const mainKeyboard: ReplyMarkup = {
+  keyboard: [[{ text: 'Сохраненные' }]],
+  resize_keyboard: true
+};
+
+function plateText(carNumber: string, regCode: string): string {
+  return `${carNumber}${regCode}`;
+}
+
+function savedCarsKeyboard(cars: Array<{ carNumber: string; regCode: string }>): ReplyMarkup {
+  return {
+    inline_keyboard: cars.map((car) => [{
+      text: plateText(car.carNumber, car.regCode),
+      callback_data: `order:${plateText(car.carNumber, car.regCode)}`
+    }])
+  };
 }
 
 interface TelegramVoice {
@@ -184,17 +214,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const update = req.body;
-    if (!update || !update.message) {
-      log('skip update without message');
+    const callback = update?.callback_query;
+    if (!update || (!update.message && !callback?.message)) {
+      log('skip update without message or callback');
       return res.status(200).json({ ok: true });
     }
 
-    const msg = update.message;
+    const msg = update.message ?? callback.message;
     const chatId: number = msg.chat.id;
-    const user = msg.from as TelegramUser;
+    const user = (callback?.from ?? msg.from) as TelegramUser;
     const userId: number = user.id;
-    const hasVoice = Boolean(msg.voice);
-    let text = (msg.text || msg.caption || '').trim();
+    const hasVoice = !callback && Boolean(msg.voice);
+    let text = (callback?.data || msg.text || msg.caption || '').trim();
     let textFromVoice = false;
 
     if (hasVoice) {
@@ -238,11 +269,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (!text) {
-      await sendMessage(chatId, hasVoice ? VOICE_RECOGNITION_FAIL_MESSAGE : 'Отправьте текст в формате: <b>KIA 215</b> или <b>777 мерседес</b>.');
+      await sendMessage(chatId, hasVoice ? VOICE_RECOGNITION_FAIL_MESSAGE : 'Отправьте полный номер с регионом, например: <b>А123АА77</b> или <b>а 123 аа 190</b>.');
       return res.status(200).json({ ok: true });
     }
 
     const trusted = await isTrusted(userId);
+    if (trusted) {
+      try {
+        await configureBotMenu();
+      } catch (menuErr: any) {
+        log('bot menu setup failed', { error: menuErr?.message ?? 'unknown' });
+      }
+    }
     if (!trusted) {
       log('user not trusted', { userId });
       if (text === '/start') {
@@ -255,7 +293,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           log('user trusted', { userId });
           await sendMessage(
             chatId,
-            'Идентификация пройдена успешно. Можете отправить запрос в формате <b>Марка авто 123</b> или <b>330 дом</b>.'
+            'Идентификация пройдена. Отправьте полный номер с регионом, например <b>А123АА77</b> или <b>а 123 аа 190</b>.',
+            mainKeyboard
           );
         } catch (err: any) {
           const message = (err?.message || 'unknown').slice(0, 200);
@@ -272,10 +311,47 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ ok: true });
     }
 
-    let carInfo: string;
-    let number3: string;
+    if (text === '/saved' || text === 'Сохраненные') {
+      const cars = await getSavedCars(userId);
+      if (!cars.length) {
+        await sendMessage(chatId, 'Сохраненных номеров пока нет. После заказа пропуска бот предложит сохранить номер.', mainKeyboard);
+      } else {
+        await sendMessage(chatId, 'Выберите номер для быстрого заказа пропуска:', savedCarsKeyboard(cars));
+      }
+      return res.status(200).json({ ok: true });
+    }
+
+    if (callback?.data === 'skip_save') {
+      await answerCallbackQuery(callback.id, 'Номер не сохранен');
+      return res.status(200).json({ ok: true });
+    }
+
+    if (callback?.data?.startsWith('save:')) {
+      try {
+        const car = parseMessage(callback.data.slice('save:'.length));
+        const status = await saveCar(userId, car);
+        const message = status === 'saved'
+          ? 'Номер сохранен'
+          : status === 'exists'
+            ? 'Этот номер уже сохранен'
+            : 'Можно сохранить не более 15 номеров';
+        await answerCallbackQuery(callback.id, message);
+      } catch (err: any) {
+        log('save car failed', { userId, error: err?.message ?? 'unknown' });
+        await answerCallbackQuery(callback.id, 'Не удалось сохранить номер');
+      }
+      return res.status(200).json({ ok: true });
+    }
+
+    if (callback?.data?.startsWith('order:')) {
+      text = callback.data.slice('order:'.length);
+      await answerCallbackQuery(callback.id);
+    }
+
+    let carNumber: string;
+    let regCode: string;
     try {
-      ({ carInfo, number3 } = parseMessage(text));
+      ({ carNumber, regCode } = parseMessage(text));
     } catch (parseErr: any) {
       const message = (parseErr?.message || 'unknown').slice(0, 300);
       log('parse error', { userId, error: message, fromVoice: textFromVoice });
@@ -286,22 +362,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const visit = formatVisitAt();
 
     try {
-      log('parsed request', { userId, carInfo, number3, visit });
+      log('parsed request', { userId, carNumber, regCode, visit });
 
-      const result = await submitPass({ carInfo, number3, visitAt: visit });
+      const result = await submitPass({ carNumber, regCode, visitAt: visit });
 
       if (result.ok) {
-        await notifyAdminPassOrder({ user, carInfo, number3, visit, ok: true });
+        await notifyAdminPassOrder({ user, carNumber, regCode, visit, ok: true });
         await sendMessage(
           chatId,
           `Пропуск заказан:
-Авто: <b>${carInfo}</b>
-Код: <b>${number3}</b>
+Номер: <b>${carNumber}${regCode}</b>
 Время визита: <b>${visit}</b>`
+        );
+        await sendMessage(
+          chatId,
+          `Сохранить номер <b>${plateText(carNumber, regCode)}</b> для быстрого заказа пропусков?`,
+          {
+            inline_keyboard: [[
+              { text: 'Сохранить', callback_data: `save:${plateText(carNumber, regCode)}` },
+              { text: 'Не сохранять', callback_data: 'skip_save' }
+            ]]
+          }
         );
         log('submission ok', { userId, status: result.status });
       } else {
-        await notifyAdminPassOrder({ user, carInfo, number3, visit, ok: false, error: `HTTP ${result.status}: ${result.snippet}` });
+        await notifyAdminPassOrder({ user, carNumber, regCode, visit, ok: false, error: `HTTP ${result.status}: ${result.snippet}` });
         await sendMessage(
           chatId,
           `Не удалось отправить пропуск (HTTP ${result.status})
@@ -312,7 +397,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e: any) {
       const message = (e?.message || 'unknown').slice(0, 300);
       log('handler error', { userId, error: message });
-      await notifyAdminPassOrder({ user, carInfo, number3, visit, ok: false, error: message });
+      await notifyAdminPassOrder({ user, carNumber, regCode, visit, ok: false, error: message });
       await sendMessage(chatId, `Ошибка: <pre>${message}</pre>`);
     }
 

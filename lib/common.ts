@@ -2,13 +2,26 @@
 import { DateTime } from 'luxon';
 import { env } from './env.js';
 
-export function parseMessage(msg: string): { carInfo: string; number3: string } {
-  const m = msg.match(/\b(\d{3})\b/);
-  if (!m) throw new Error('В сообщении должны быть ровно 3 цифры (например: "ауди 123" или "330 киа").');
-  const number3 = m[1];
-  const carInfo = msg.replace(m[0], ' ').replace(/\s+/g, ' ').trim();
-  if (!carInfo) throw new Error('Не найдено название марки/описание авто (CAR_INFO).');
-  return { carInfo, number3 };
+const PLATE_LETTERS = 'АВЕКМНОРСТУХ';
+
+const LATIN_TO_CYRILLIC: Record<string, string> = {
+  A: 'А', B: 'В', C: 'С', E: 'Е', H: 'Н', K: 'К', M: 'М', O: 'О', P: 'Р', T: 'Т', X: 'Х', Y: 'У'
+};
+
+export function parseMessage(msg: string): { carNumber: string; regCode: string } {
+  const normalized = msg
+    .toUpperCase()
+    .replace(/[ABCEHKMOPTXY]/g, (letter) => LATIN_TO_CYRILLIC[letter] ?? letter);
+  const letter = `[${PLATE_LETTERS}]`;
+  const separator = '[^\\p{L}\\d]*';
+  const match = normalized.match(new RegExp(`(${letter}${separator}\\d${separator}\\d${separator}\\d${separator}${letter}${separator}${letter}${separator}\\d{2,3})(?!\\d)`, 'u'));
+
+  if (!match) {
+    throw new Error('Введите полный российский номер с регионом, например: А123АА77. Пробелы и дефисы допустимы.');
+  }
+
+  const compact = match[1].replace(/[^\p{L}\d]/gu, '');
+  return { carNumber: compact.slice(0, 6), regCode: compact.slice(6) };
 }
 
 export function formatVisitAt(s?: string): string {

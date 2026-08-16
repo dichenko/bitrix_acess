@@ -10,7 +10,6 @@ const ACCESS_KEY = env('ACCESS_KEY');
 
 const bodySchema = z.object({
   text: z.string().min(2),
-  reg_code: z.string().regex(/^\d{3}$/).optional(),
   visit_at: z.string().regex(/^\d{2}\.\d{2}\.\d{4}\s\d{2}:\d{2}:\d{2}$/).optional(),
   comment: z.string().optional()
 });
@@ -18,8 +17,8 @@ const bodySchema = z.object({
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   let parsedOrder:
     | {
-        carInfo: string;
-        number3: string;
+        carNumber: string;
+        regCode: string;
         visit: string;
       }
     | undefined;
@@ -31,23 +30,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const parsed = bodySchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ ok: false, error: parsed.error.flatten() });
 
-    const { text, reg_code, visit_at, comment } = parsed.data;
-    const { carInfo, number3 } = parseMessage(text);
+    const { text, visit_at, comment } = parsed.data;
+    const { carNumber, regCode } = parseMessage(text);
     const visit = formatVisitAt(visit_at);
-    parsedOrder = { carInfo, number3, visit };
+    parsedOrder = { carNumber, regCode, visit };
 
     const result = await submitPass({
-      carInfo,
-      number3,
-      regCode: reg_code,
+      carNumber,
+      regCode,
       visitAt: visit,
       comment
     });
 
     await notifyAdminPassOrder({
       source: 'REST API',
-      carInfo,
-      number3,
+      carNumber,
+      regCode,
       visit,
       ok: result.ok,
       error: result.ok ? undefined : `HTTP ${result.status}: ${result.snippet}`
